@@ -9,18 +9,32 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.core.os.bundleOf
+import androidx.core.view.isVisible
 import androidx.navigation.fragment.findNavController
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthMultiFactorException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
+import com.google.firebase.quickstart.auth.AuthApp
 import com.google.firebase.quickstart.auth.R
+import com.google.firebase.quickstart.auth.RemoteConfigManager
 import com.google.firebase.quickstart.auth.databinding.FragmentEmailpasswordBinding
+import com.google.firebase.remoteconfig.ConfigUpdate
+import com.google.firebase.remoteconfig.ConfigUpdateListener
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigException
+import com.google.firebase.remoteconfig.ktx.get
+import com.google.firebase.remoteconfig.ktx.remoteConfig
+import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
 
 class EmailPasswordFragment : BaseFragment() {
 
     private lateinit var auth: FirebaseAuth
+    private lateinit var remoteConfig: FirebaseRemoteConfig
+    private lateinit var analytics: FirebaseAnalytics
 
     private var _binding: FragmentEmailpasswordBinding? = null
     private val binding: FragmentEmailpasswordBinding
@@ -55,9 +69,11 @@ class EmailPasswordFragment : BaseFragment() {
 
         // Initialize Firebase Auth
         auth = Firebase.auth
+        analytics = Firebase.analytics
+        remoteConfig = Firebase.remoteConfig
     }
 
-    public override fun onStart() {
+    override fun onStart() {
         super.onStart()
         // Check if user is signed in (non-null) and update UI accordingly.
         val currentUser = auth.currentUser
@@ -107,7 +123,16 @@ class EmailPasswordFragment : BaseFragment() {
                         // Sign in success, update UI with the signed-in user's information
                         Log.d(TAG, "signInWithEmail:success")
                         val user = auth.currentUser
+                        analytics.logEvent(FirebaseAnalytics.Event.LOGIN, bundleOf(
+                            "emailId" to email
+                        ))
+                        if (user?.email == "alvin.dizon91@gmail.com") {
+                            analytics.setUserProperty("user_code", "1234")
+                        } else {
+                            analytics.setUserProperty("user_code", "1111")
+                        }
                         updateUI(user)
+
                     } else {
                         // If sign in fails, display a message to the user.
                         Log.w(TAG, "signInWithEmail:failure", task.exception)
@@ -165,6 +190,17 @@ class EmailPasswordFragment : BaseFragment() {
         }
     }
 
+    private fun fetchAndActivateRemoteConfig() {
+        remoteConfig.fetchAndActivate().addOnCompleteListener {
+            if (it.isSuccessful) {
+                Log.w(TAG, "Config params fetched and activated: ${it.result}")
+                Log.w(TAG, "Fetched and activated values for community feature flag: ${remoteConfig["feature_enabled"].asBoolean()}")
+            } else {
+                Log.w(TAG, "Config params update failed")
+            }
+        }
+    }
+
     private fun validateForm(): Boolean {
         var valid = true
 
@@ -190,9 +226,11 @@ class EmailPasswordFragment : BaseFragment() {
     private fun updateUI(user: FirebaseUser?) {
         hideProgressBar()
         if (user != null) {
+            fetchAndActivateRemoteConfig()
+            val featureFlag = remoteConfig["feature_enabled"].asBoolean()
             binding.status.text = getString(R.string.emailpassword_status_fmt,
                     user.email, user.isEmailVerified)
-            binding.detail.text = getString(R.string.firebase_status_fmt, user.uid)
+            binding.detail.text = getString(R.string.firebase_status_fmt, featureFlag.toString())
 
             binding.emailPasswordButtons.visibility = View.GONE
             binding.emailPasswordFields.visibility = View.GONE
